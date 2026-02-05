@@ -1,19 +1,17 @@
 # Diffie-Hellman Key Exchange (DHKE) with MITM Attack Demonstration
 
-**SC6104 - Introduction to Cryptography | NTU Singapore**
+**SC6104 Project**
 
 A comprehensive implementation and security analysis of the Diffie-Hellman Key Exchange protocol, demonstrating both secure key agreement and its vulnerability to Man-in-the-Middle attacks when authentication is absent.
 
-## 📋 Project Overview
-
-This project demonstrates fundamental concepts in public-key cryptography:
+## Project
 
 - **Secure Key Exchange**: How two parties can establish a shared secret over an insecure channel
 - **Discrete Logarithm Problem**: The mathematical foundation ensuring DHKE security
 - **MITM Vulnerability**: Why authentication is critical in real-world protocols
 - **Performance Analysis**: Trade-offs between key sizes and computational efficiency
 
-### Why This Matters
+### Why?
 
 DHKE is fundamental to modern internet security:
 - **TLS/SSL**: Establishes HTTPS connections
@@ -21,9 +19,7 @@ DHKE is fundamental to modern internet security:
 - **Messaging Apps**: Signal, WhatsApp end-to-end encryption
 - **SSH**: Secure remote access
 
-Understanding its strengths and weaknesses is crucial for implementing secure systems.
-
-## 🗂️ Project Structure
+## File Structure
 
 ```
 .
@@ -34,7 +30,7 @@ Understanding its strengths and weaknesses is crucial for implementing secure sy
 └── README.md             # This file
 ```
 
-## 🔐 Cryptographic Background
+## Cryptography
 
 ### The Diffie-Hellman Protocol
 
@@ -76,50 +72,12 @@ Alice <--[g^(ae)]-- Eve <--[g^(eb)]-- Bob
       thinks: Bob            thinks: Alice
 ```
 
-Eve establishes separate secrets with both parties and can decrypt/modify all traffic.
+Eve with separate secrets with both parties and can decrypt/modify all traffic.
+Protocols like TLS use digital certificates to authenticate public keys, preventing impersonation.
 
-**Real-World Solution**: Protocols like TLS use digital certificates to authenticate public keys, preventing impersonation.
+## Getting Started
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.7 or higher
-- No external dependencies (uses only standard library)
-
-### Installation
-
-```bash
-# Clone or download the project
-cd "Intro to Cryptography/Project"
-
-# Verify files are present
-ls -l
-```
-
-## 📖 Usage Guide
-
-### 1. Running Tests (Start Here!)
-
-Verify the implementation before running demonstrations:
-
-```bash
-python analysis.py
-```
-
-This will:
-- Run unit tests on all cryptographic operations
-- Verify shared secret agreement works correctly
-- Demonstrate the weak parameter attack
-- Benchmark performance (1024-bit vs 2048-bit)
-- Test randomness quality
-- Run integration tests
-
-**Expected Output**: All tests should pass with performance metrics.
-
-### 2. Secure Key Exchange Demo
-
-Demonstrates successful secure communication between Alice and Bob.
+### a. Secure Key Exchange
 
 **Terminal 1** (Start Bob first):
 ```bash
@@ -138,14 +96,12 @@ python dhke_secure.py --alice
 4. Alice sends encrypted message
 5. Bob receives and decrypts successfully
 
-**Key Observations**:
+**Observations**:
 - Both parties compute identical shared secrets
 - Messages are encrypted end-to-end
 - Without private keys, eavesdropper sees only ciphertext
 
-### 3. Man-in-the-Middle Attack Demo
-
-Demonstrates how Eve intercepts and modifies communication.
+### b. Man-in-the-Middle Attack
 
 **Terminal 1** (Start Bob):
 ```bash
@@ -171,24 +127,20 @@ python dhke_mitm.py --alice
 6. Alice's message is decrypted, modified, and re-encrypted by Eve
 7. Bob receives the modified message thinking it's from Alice
 
-**Key Observations**:
+**Observations**:
 - Alice and Bob have DIFFERENT shared secrets
 - Eve can read and modify all messages
 - Neither victim detects the attack
-- This is why TLS requires certificate authentication!
+- This is why TLS requires certificate authentication
 
-### 4. 🎮 MANUAL MODE - Complete Control (NEW!)
+### c. MANUAL MODE
 
-**The most educational and demonstration-friendly mode!**
-
-This gives you **complete manual control** over every single step:
-- ✅ Choose security parameters (23/512/1024/2048-bit)
-- ✅ See connection establishment details
-- ✅ Press ENTER to advance each step
-- ✅ Type your own messages
-- ✅ Watch key generation step-by-step
-- ✅ Control when Eve intercepts and modifies messages
-- ✅ Attempt brute force on weak parameters
+Choose security parameters (23/512/1024/2048-bit)
+See connection establishment details
+Type your own messages
+Watch key generation step-by-step
+Control when Eve intercepts and modifies messages
+Attempt brute force on weak parameters
 
 #### Direct Secure Communication:
 
@@ -208,7 +160,7 @@ You'll be prompted to:
 - Type custom messages to send
 - Watch encryption/decryption happen live
 
-#### MITM Attack with Full Control:
+#### MITM Attack (with Full Control):
 
 **Terminal 1** (Bob on port 5001):
 ```bash
@@ -233,15 +185,10 @@ In this mode, you can:
 - **See attack summary with different secrets**
 - **Attempt brute force if using weak parameters**
 
-**Perfect for:**
-- 🎓 Learning every detail of the protocol
-- 🎤 Live demonstrations and presentations
-- 🔬 Understanding MITM attack mechanics
-- 🎯 Showing security parameter impact
+Understanding MITM attack mechanics
+Showing security parameter impact
 
-**See [MANUAL_MODE_GUIDE.md](MANUAL_MODE_GUIDE.md) for detailed walkthrough!**
-
-## 🔬 Technical Details
+## Technical Details
 
 ### Security Parameters
 
@@ -258,11 +205,10 @@ In this mode, you can:
 - **Use Case**: Fast demonstrations, testing
 
 #### Weak Prime (23)
-- **Purpose**: Educational - demonstrates DLP attack
 - **Breakability**: Brute force in milliseconds
 - **Lesson**: Shows why large primes are essential
 
-### Key Functions (dh_params.py)
+### Functions in (dh_params.py)
 
 ```python
 # Get standard DH parameters
@@ -281,9 +227,7 @@ shared_secret = compute_shared_secret(other_public, my_private, p)
 encryption_key = derive_key(shared_secret)
 ```
 
-### Performance Benchmarks
-
-Typical performance on modern hardware:
+### Benchmarks
 
 | Operation | 1024-bit | 2048-bit |
 |-----------|----------|----------|
@@ -291,9 +235,9 @@ Typical performance on modern hardware:
 | Secret Computation | ~2-5 ms | ~10-20 ms |
 | Full Exchange | ~8-20 ms | ~40-80 ms |
 
-**Note**: 2048-bit is ~4x slower but provides significantly stronger security.
+2048-bit is ~4x slower but provides significantly stronger security.
 
-## 🎓 Educational Insights
+## Insights
 
 ### 1. The Discrete Logarithm Problem
 
@@ -334,8 +278,6 @@ Our implementation uses standardized safe primes from RFC 3526.
 - Attacker who knows seed can predict all keys
 - Never use for cryptography!
 
-Run `analysis.py` to see the demonstration.
-
 ### 4. Authentication Prevents MITM
 
 In TLS:
@@ -346,63 +288,27 @@ In TLS:
 
 Our implementation shows what happens WITHOUT this authentication.
 
-## 🧪 Testing & Validation
-
-### Test Coverage
-
-The `analysis.py` script includes:
-
-1. **Unit Tests**:
-   - Parameter validation
-   - Shared secret agreement
-   - Encryption/decryption correctness
-   - Key derivation consistency
-
-2. **Security Tests**:
-   - MITM vulnerability demonstration
-   - Weak parameter attack
-   - Randomness quality analysis
-
-3. **Performance Tests**:
-   - Key generation benchmarks
-   - Secret computation benchmarks
-   - Size vs. speed trade-offs
-
-4. **Integration Tests**:
-   - Full key exchange simulation
-   - End-to-end message transmission
-
-### Running Specific Tests
-
-```bash
-# Run all tests
-python analysis.py
-
-# Test individual components
-python -c "from dh_params import *; p, g = get_dh_params('weak'); print(brute_force_discrete_log(5, 16, 23))"
-```
-
 ## 🎯 Key Takeaways for Presentation
 
 ### Strengths of DHKE:
-✅ Enables key agreement without prior shared secrets  
-✅ Based on hard mathematical problem (DLP)  
-✅ Efficient for large keys (O(log n) exponentiation)  
-✅ Foundation of modern secure communications  
+Enables key agreement without prior shared secrets  
+Based on hard mathematical problem (DLP)  
+Efficient for large keys (O(log n) exponentiation)  
+Foundation of modern secure communications  
 
 ### Weaknesses Without Authentication:
-❌ Vulnerable to active Man-in-the-Middle attacks  
-❌ Cannot verify identity of communication partner  
-❌ Attacker can impersonate both parties  
-❌ All traffic can be read and modified  
+Vulnerable to active Man-in-the-Middle attacks  
+Cannot verify identity of communication partner  
+Attacker can impersonate both parties  
+All traffic can be read and modified  
 
-### Real-World Solutions:
-🔒 TLS: Certificates + authenticated key exchange  
-🔒 SSH: Public key fingerprint verification  
-🔒 Signal: Trust-on-first-use + safety numbers  
-🔒 IPsec: Pre-shared keys or certificate infrastructure  
+### Real Solutions:
+TLS: Certificates + authenticated key exchange  
+SSH: Public key fingerprint verification  
+Signal: Trust-on-first-use + safety numbers  
+IPsec: Pre-shared keys or certificate infrastructure  
 
-## 🔍 Common Questions
+## Common Questions
 
 ### Q: Why not just use RSA for key exchange?
 **A**: DHKE has forward secrecy - even if long-term keys are compromised later, past sessions remain secure. RSA key exchange doesn't provide this.
@@ -425,96 +331,6 @@ python -c "from dh_params import *; p, g = get_dh_params('weak'); print(brute_fo
 
 We use simple encryption to keep focus on the key exchange, not the encryption algorithm.
 
-## 📚 References & Further Reading
-
-### Standards & RFCs:
-- [RFC 3526](https://tools.ietf.org/html/rfc3526) - MODP Diffie-Hellman groups
-- [RFC 7919](https://tools.ietf.org/html/rfc7919) - Finite Field Groups for TLS
-- [RFC 5246](https://tools.ietf.org/html/rfc5246) - TLS 1.2 (uses DHE/ECDHE)
-
-### Academic Resources:
-- Diffie & Hellman's original paper (1976): "New Directions in Cryptography"
-- Cryptography textbooks: Katz & Lindell, Boneh & Shoup
-- NIST Special Publication 800-56A: Recommendation for Pair-Wise Key Establishment
-
-### Course Connection:
-This project directly implements concepts from:
-- Week 5-6: Public Key Cryptography
-- Key Agreement protocols
-- Discrete Logarithm Problem
-- Number theory foundations
-
-## ⚠️ Security Disclaimer
-
-This implementation is for **educational purposes only**:
-- Uses simplified encryption (not production-grade)
-- No protection against timing attacks
-- No input validation for network data
-- Meant for understanding concepts, not deployment
-
-For production applications, use established libraries:
-- OpenSSL / LibreSSL
-- cryptography (Python)
-- NaCl / libsodium
-- Bouncy Castle
-
-## 👥 Project Information
-
-**Course**: SC6104 - Introduction to Cryptography  
-**Institution**: Nanyang Technological University (NTU), Singapore  
-**Topic**: Asymmetric Cryptography - Key Exchange Protocols  
-
-**Learning Objectives Achieved**:
-1. Implemented public-key cryptographic protocol from scratch
-2. Demonstrated mathematical foundations (DLP, modular arithmetic)
-3. Analyzed security properties and vulnerabilities
-4. Explored real-world applications and attack scenarios
-5. Understood importance of authentication in cryptographic protocols
-
-## 🛠️ Troubleshooting
-
-### Issue: "Connection Refused" error
-**Solution**: Make sure you start the server (Bob/Eve) before the client (Alice).
-
-### Issue: Test failures in analysis.py
-**Solution**: Check Python version (3.7+ required). Verify all files are present.
-
-### Issue: Slow performance on weak hardware
-**Solution**: Use 1024-bit keys for demos: `python dhke_secure.py --alice --bits 1024`
-
-### Issue: Import errors
-**Solution**: Run scripts from the project directory: `cd "Intro to Cryptography/Project"`
-
-## 📝 Quick Reference
-
-### Run Secure Demo:
-```bash
-# Terminal 1
-python dhke_secure.py --bob
-
-# Terminal 2  
-python dhke_secure.py --alice
-```
-
-### Run MITM Demo:
-```bash
-# Terminal 1
-python dhke_mitm.py --bob
-
-# Terminal 2
-python dhke_mitm.py --eve
-
-# Terminal 3
-python dhke_mitm.py --alice
-```
-
-### Run All Tests:
-```bash
-python analysis.py
-```
-
 ---
 
-**Last Updated**: February 2026  
-**Python Version**: 3.7+  
-**License**: Educational Use
+Made by Yashraj Pardeshi and Zhu Ruiqi
