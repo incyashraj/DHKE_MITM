@@ -141,43 +141,47 @@ ls -l *.py
 
 ---
 
-## 🎯 Demo Flow for Presentation
+## ⚡ FAST Demo Flow (8 minutes: 6 min present + 2 min Q&A)
 
-### Recommended Order:
+### PRE-PRESENTATION SETUP (Critical!):
 
-1. **Start with Analysis** (builds confidence)
-   ```bash
-   python analysis.py
-   ```
-   - Shows everything works
-   - Demonstrates weak parameter attack
-   - Shows performance metrics
+**Run Analysis First - Take Screenshot**:
+```bash
+python analysis.py  # Save output, show during presentation
+```
 
-2. **Secure Demo** (show it working)
-   ```bash
-   # Terminal 1
-   python dhke_secure.py --bob
-   
-   # Terminal 2
-   python dhke_secure.py --alice
-   ```
-   - Highlight matching secrets
-   - Show encrypted message works
+**Prepare Terminals (Before presenting)**:
+```bash
+# Use 1024-bit for SPEED (demos run in 1-2 seconds)
 
-3. **MITM Demo** (show the vulnerability)
-   ```bash
-   # Terminal 1
-   python dhke_mitm.py --bob
-   
-   # Terminal 2
-   python dhke_mitm.py --eve
-   
-   # Terminal 3
-   python dhke_mitm.py --alice
-   ```
-   - Point out different secrets
-   - Highlight message modification
-   - Emphasize undetectability
+# Terminal 1 - Secure Demo Bob (DON'T RUN YET - just have ready)
+python dhke_secure.py --bob --bits 1024
+
+# Terminal 2 - MITM Bob (DON'T RUN YET)
+python dhke_mitm.py --bob
+
+# Terminal 3 - MITM Eve (DON'T RUN YET)
+python dhke_mitm.py --eve
+```
+
+### During 6-Minute Presentation:
+
+**Person 1 (3 minutes)**:
+1. Intro: "DHKE for secure key exchange" (30s)
+2. Explain protocol briefly (45s)
+3. Run Secure Demo:
+   - Start Terminal 1 (Bob)
+   - New terminal: `python dhke_secure.py --alice --bits 1024`
+   - Point to matching secrets (1m)
+
+**Person 2 (3 minutes)**:
+4. Run MITM Demo:
+   - Start Terminals 2, 3, then Alice
+   - Point to different secrets + modified message (2m)
+5. Show analysis screenshot (45s)
+6. Conclusion: "Needs authentication!" (30s)
+
+**Q&A (2 minutes)** - See PRESENTATION_NOTES.md
 
 ---
 
