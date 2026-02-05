@@ -23,11 +23,12 @@ DHKE is fundamental to modern internet security:
 
 ```
 .
-├── dh_params.py          # Core cryptographic utilities and parameters
-├── dhke_secure.py        # Secure two-party key exchange (Alice-Bob)
-├── dhke_mitm.py          # Man-in-the-Middle attack simulation (Alice-Eve-Bob)
-├── analysis.py           # Comprehensive testing and analysis suite
-└── README.md             # This file
+├── dh_params.py              # Core cryptographic utilities and parameters
+├── dhke_secure.py            # Secure two-party key exchange (Alice-Bob)
+├── dhke_mitm.py              # Man-in-the-Middle attack simulation (Alice-Eve-Bob)
+├── dhke_passive_attack.py    # Passive eavesdropping with brute force DLP
+├── analysis.py               # Comprehensive testing and analysis suite
+└── README.md                 # This file
 ```
 
 ## Cryptography
@@ -133,6 +134,42 @@ python dhke_mitm.py --alice
 - Neither victim detects the attack
 - This is why TLS requires certificate authentication
 
+### c. Passive Eavesdropping Attack (Breaking Weak Parameters)
+
+This demonstrates what happens when Eve tries to break an **already-established** secure connection by brute-forcing the discrete logarithm.
+
+**Terminal 1** (Start Bob):
+```bash
+python dhke_secure.py --bob
+```
+
+**Terminal 2** (Start Alice - choose weak 23-bit parameters):
+```bash
+python dhke_secure.py --alice
+# Select option 1 (23-bit) when prompted
+```
+
+**Terminal 3** (After Alice and Bob exchange keys, start Eve):
+```bash
+python dhke_passive_attack.py
+```
+
+**What Happens**:
+1. Alice and Bob establish secure connection (Eve is NOT involved initially)
+2. Eve joins later as passive observer
+3. Eve captures public parameters (p, g) and public keys (A, B)
+4. Eve captures encrypted messages from the chat
+5. Eve attempts brute force to find private key:
+   - **23-bit parameters:** ✓ Eve succeeds in seconds, decrypts all messages
+   - **512+ bit parameters:** ✗ Eve fails, shows it would take millions of years
+
+**Observations**:
+- Demonstrates the importance of parameter strength
+- Shows difference between **passive** (eavesdropping) vs **active** (MITM) attacks
+- MITM works regardless of parameter size (no authentication)
+- Passive attack only works on weak parameters (brute force DLP)
+- With strong parameters, even captured traffic is useless to Eve
+
 ### Usage Notes
 
 **Interactive Features**:
@@ -140,7 +177,12 @@ python dhke_mitm.py --alice
 - Type your own messages in the chat
 - See detailed key generation and encryption steps
 - Watch Eve intercept and optionally modify messages in MITM mode
-- View comprehensive attack analysis at the end
+- Observe passive attack success (23-bit) or failure (strong params)
+- View time estimates for breaking different parameter sizes
+- Comprehensive attack analysis at the end
+
+**For Testing**:
+Run `python analysis.py` for comprehensive automated tests including weak parameter attacks and performance benchmarks.
 
 ## Technical Details
 
