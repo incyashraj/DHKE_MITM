@@ -39,6 +39,16 @@ PRIME_1024 = int(
 # With such a small prime, the discrete log problem is trivial to solve
 PRIME_WEAK = 23
 
+# 512-bit prime (weak, for demonstration)
+PRIME_512 = int(
+    "FFFFFFFFFFFFFFFFC90FDAA22168C234"
+    "C4C6628B80DC1CD129024E088A67CC74"
+    "020BBEA63B139B22514A08798E3404DD"
+    "EF9519B3CD3A431B302B0A6DF25F1437"
+    "4FE1356D6D51C245E485B576625E7EC6"
+    "F44C42E9A63A3620FFFFFFFFFFFFFFFF", 16
+)
+
 # Generator value - typically 2 or 5 for safe primes
 GENERATOR = 2
 
@@ -48,7 +58,7 @@ def get_dh_params(bit_length=2048):
     Returns standard Diffie-Hellman parameters (p, g).
     
     Args:
-        bit_length: Size of prime in bits (1024, 2048, or 'weak')
+        bit_length: Size of prime in bits (512, 1024, 2048, or 'weak')
     
     Returns:
         tuple: (prime modulus p, generator g)
@@ -61,7 +71,9 @@ def get_dh_params(bit_length=2048):
         return PRIME_2048, GENERATOR
     elif bit_length == 1024:
         return PRIME_1024, GENERATOR
-    elif bit_length == "weak":
+    elif bit_length == 512:
+        return PRIME_512, GENERATOR
+    elif bit_length == "weak" or bit_length == 23:
         return PRIME_WEAK, 5  # Use g=5 for the small prime
     else:
         raise ValueError(f"Unsupported bit length: {bit_length}")

@@ -28,10 +28,10 @@ Understanding its strengths and weaknesses is crucial for implementing secure sy
 ```
 .
 ├── dh_params.py          # Core cryptographic utilities and parameters
-├── dhke_secure.py        # Secure key exchange demonstration
-├── dhke_mitm.py          # Man-in-the-Middle attack simulation
+├── dhke_secure.py        # Secure two-party key exchange (Alice-Bob)
+├── dhke_mitm.py          # Man-in-the-Middle attack simulation (Alice-Eve-Bob)
 ├── analysis.py           # Comprehensive testing and analysis suite
-└── README.md            # This file
+└── README.md             # This file
 ```
 
 ## 🔐 Cryptographic Background
@@ -176,6 +176,70 @@ python dhke_mitm.py --alice
 - Eve can read and modify all messages
 - Neither victim detects the attack
 - This is why TLS requires certificate authentication!
+
+### 4. 🎮 MANUAL MODE - Complete Control (NEW!)
+
+**The most educational and demonstration-friendly mode!**
+
+This gives you **complete manual control** over every single step:
+- ✅ Choose security parameters (23/512/1024/2048-bit)
+- ✅ See connection establishment details
+- ✅ Press ENTER to advance each step
+- ✅ Type your own messages
+- ✅ Watch key generation step-by-step
+- ✅ Control when Eve intercepts and modifies messages
+- ✅ Attempt brute force on weak parameters
+
+#### Direct Secure Communication:
+
+**Terminal 1** (Bob - Receiver):
+```bash
+python dhke_manual.py --bob
+```
+
+**Terminal 2** (Alice - Sender):
+```bash
+python dhke_manual.py --alice
+```
+
+You'll be prompted to:
+- Select security parameters (1-4)
+- Press ENTER between each protocol step
+- Type custom messages to send
+- Watch encryption/decryption happen live
+
+#### MITM Attack with Full Control:
+
+**Terminal 1** (Bob on port 5001):
+```bash
+python dhke_manual.py --bob --bob-port 5001
+```
+
+**Terminal 2** (Eve - The attacker):
+```bash
+python dhke_manual.py --eve --alice-port 5000 --bob-port 5001
+```
+
+**Terminal 3** (Alice connects to Eve):
+```bash
+python dhke_manual.py --alice --alice-port 5000
+```
+
+In this mode, you can:
+- **See Eve intercept parameters and keys**
+- **Watch Eve generate TWO different key pairs**
+- **Control when Eve decrypts messages**
+- **Choose to modify messages or forward originals**
+- **See attack summary with different secrets**
+- **Attempt brute force if using weak parameters**
+
+**Perfect for:**
+- 🎓 Learning every detail of the protocol
+- 🎤 Live demonstrations and presentations
+- 🔬 Understanding MITM attack mechanics
+- 🎯 Showing security parameter impact
+
+**See [MANUAL_MODE_GUIDE.md](MANUAL_MODE_GUIDE.md) for detailed walkthrough!**
 
 ## 🔬 Technical Details
 

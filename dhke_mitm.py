@@ -1,459 +1,663 @@
+#!/usr/bin/env python3
 """
-Man-in-the-Middle (MITM) Attack on Diffie-Hellman Key Exchange
-
-This script demonstrates the vulnerability of unauthenticated DHKE.
-Eve acts as a proxy between Alice and Bob, intercepting and modifying their
-communication without either party knowing.
-
-The Attack:
-1. Alice thinks she's talking to Bob, but connects to Eve
-2. Eve intercepts Alice's public key A
-3. Eve generates her own key pairs (e1 with Alice, e2 with Bob)
-4. Eve forwards her public key E1 to Bob, pretending to be Alice
-5. Bob thinks E1 is from Alice, sends back his public key B to Eve
-6. Eve sends her public key E2 to Alice, pretending to be Bob
-7. Result: Alice and Eve share secret s1, Eve and Bob share secret s2
-8. Eve can decrypt, read, modify, and re-encrypt all messages!
-
-This demonstrates why authentication is critical in real protocols like TLS.
-
-Usage:
-    Terminal 1: python dhke_mitm.py --bob
-    Terminal 2: python dhke_mitm.py --eve  
-    Terminal 3: python dhke_mitm.py --alice
+Diffie-Hellman Key Exchange - Man-in-the-Middle Attack
+Three parties: Alice, Bob, and Eve (attacker)
+Eve intercepts and can modify all communication
 """
 
 import socket
 import json
-import argparse
 import sys
-import threading
+import argparse
 import time
 from dh_params import (
-    get_dh_params, generate_private_key, compute_public_key,
-    compute_shared_secret, derive_key, simple_encrypt, simple_decrypt
+    get_dh_params,
+    generate_private_key,
+    compute_public_key,
+    compute_shared_secret,
+    derive_key,
+    simple_encrypt,
+    simple_decrypt,
+    brute_force_discrete_log
 )
 
-# Network configuration
-HOST = '127.0.0.1'
-PORT_EVE = 5000      # Eve listens here (Alice connects to this)
-PORT_BOB = 5001      # Bob listens here (Eve connects to this)
+
+def recv_msg(sock):
+    """Receive a complete message (reads until newline)"""
+    data = b''
+    while True:
+        chunk = sock.recv(1)
+        if not chunk:
+            return None
+        data += chunk
+        if chunk == b'\n':
+            return data.decode().strip()
 
 
-class AliceMITM:
-    """
-    Alice - the victim who thinks she's securely talking to Bob.
-    She doesn't know Eve is in the middle!
-    """
-    
-    def __init__(self, bit_length=1024):
-        # Use 1024-bit for faster demo
-        self.bit_length = bit_length
-        self.p, self.g = get_dh_params(bit_length)
-        self.private_key = None
-        self.public_key = None
-        self.shared_secret = None
-        self.encryption_key = None
-        
-    def generate_keys(self):
-        print("[Alice] Generating private key...")
-        self.private_key = generate_private_key(self.p, secure=True)
-        self.public_key = compute_public_key(self.g, self.private_key, self.p)
-        print(f"[Alice] Public key: {self.public_key}")
-        
-    def compute_shared(self, public_key):
-        print(f"[Alice] Received public key (thinks it's from Bob): {public_key}")
-        self.shared_secret = compute_shared_secret(public_key, self.private_key, self.p)
-        self.encryption_key = derive_key(self.shared_secret)
-        print(f"[Alice] Computed shared secret: {self.shared_secret}")
-        
-    def run(self):
-        print("=" * 70)
-        print("ALICE - Initiating key exchange (unknowingly with Eve!)")
-        print("=" * 70)
-        
-        self.generate_keys()
-        
-        # Connect to Eve (but Alice thinks it's Bob!)
-        print(f"\n[Alice] Connecting to 'Bob' at {HOST}:{PORT_EVE}...")
-        time.sleep(1)  # Give Eve time to start
-        
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
-        try:
-            client_socket.connect((HOST, PORT_EVE))
-            print("[Alice] Connected to 'Bob'! (actually Eve)")
-            
-            # Send public parameters and key
-            message = {
-                'p': self.p,
-                'g': self.g,
-                'public_key': self.public_key
-            }
-            client_socket.send(json.dumps(message).encode('utf-8'))
-            print(f"[Alice] Sent (p, g, A) to 'Bob'")
-            
-            # Receive "Bob's" public key (actually Eve's)
-            data = client_socket.recv(4096)
-            response = json.loads(data.decode('utf-8'))
-            bob_public_key = response['public_key']
-            
-            # Compute shared secret with Eve (thinking it's with Bob)
-            self.compute_shared(bob_public_key)
-            
-            # Send encrypted message
-            print("\n[Alice] Sending encrypted message...")
-            secret_message = "Bob, let's meet at the secret location at midnight. -Alice"
-            encrypted = simple_encrypt(secret_message, self.encryption_key)
-            print(f"[Alice] Original message: '{secret_message}'")
-            print(f"[Alice] Encrypted: {encrypted.hex()[:64]}...")
-            
-            client_socket.send(len(encrypted).to_bytes(4, 'big'))
-            client_socket.send(encrypted)
-            
-            # Receive response
-            msg_length = int.from_bytes(client_socket.recv(4), 'big')
-            encrypted_response = client_socket.recv(msg_length)
-            decrypted = simple_decrypt(encrypted_response, self.encryption_key)
-            
-            print(f"\n[Alice] Received message from 'Bob': '{decrypted}'")
-            print("[Alice] Everything seems secure! (or is it?)")
-            
-        except Exception as e:
-            print(f"[Alice ERROR] {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            client_socket.close()
-            print("[Alice] Connection closed.\n")
-
-
-class BobMITM:
-    """
-    Bob - another victim who thinks he's talking to Alice.
-    He also doesn't know about Eve!
-    """
-    
-    def __init__(self):
+class Alice:
+    def __init__(self, port=5000):
+        self.port = port
+        self.sock = None
+        self.bits = None
         self.p = None
         self.g = None
         self.private_key = None
         self.public_key = None
         self.shared_secret = None
-        self.encryption_key = None
+        self.aes_key = None
+        self.bob_public_key = None
         
-    def receive_params_and_generate_keys(self, p, g):
-        self.p = p
-        self.g = g
-        print(f"[Bob] Received parameters from 'Alice'")
+    def select_parameters(self):
+        print("\n" + "="*60)
+        print("Alice: Select Security Parameters")
+        print("="*60)
+        print("1. 23-bit   (weak - breakable)")
+        print("2. 512-bit  (weak - deprecated)")
+        print("3. 1024-bit (moderate)")
+        print("4. 2048-bit (strong)")
         
-        self.private_key = generate_private_key(self.p, secure=True)
-        self.public_key = compute_public_key(self.g, self.private_key, self.p)
-        print(f"[Bob] Generated public key: {self.public_key}")
-        
-    def compute_shared(self, alice_public_key):
-        print(f"[Bob] Received public key (thinks it's from Alice): {alice_public_key}")
-        self.shared_secret = compute_shared_secret(alice_public_key, self.private_key, self.p)
-        self.encryption_key = derive_key(self.shared_secret)
-        print(f"[Bob] Computed shared secret: {self.shared_secret}")
+        choice = input("\nChoice (1-4): ").strip()
+        bits_map = {'1': 23, '2': 512, '3': 1024, '4': 2048}
+        self.bits = bits_map.get(choice, 1024)
+        self.p, self.g = get_dh_params(self.bits)
+        print(f"\nUsing {self.bits}-bit parameters")
         
     def run(self):
-        print("=" * 70)
-        print("BOB - Waiting for Alice's key exchange request")
-        print("=" * 70)
+        self.select_parameters()
         
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
+        print(f"\nConnecting to Bob at localhost:{self.port}...")
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            server_socket.bind((HOST, PORT_BOB))
-            server_socket.listen(1)
-            print(f"[Bob] Listening on {HOST}:{PORT_BOB}...")
-            print("[Bob] Waiting for 'Alice' to connect...\n")
+            self.sock.connect(('localhost', self.port))
+            print("Connected.")
+        except ConnectionRefusedError:
+            print("ERROR: Cannot connect!")
+            sys.exit(1)
+        
+        # Send parameters
+        print("Sending parameters...")
+        params = {'p': str(self.p), 'g': str(self.g), 'bits': str(self.bits)}
+        self.sock.send((json.dumps(params) + '\n').encode())
+        
+        # Generate keys
+        print("\nGenerating Alice's keys...")
+        self.private_key = generate_private_key(self.p)
+        print(f"Private key (a): {self.private_key}")
+        print(f"\nComputing public key: A = g^a mod p")
+        print(f"  g = {self.g}")
+        print(f"  a = {self.private_key}")
+        print(f"  p = {self.p}")
+        self.public_key = compute_public_key(self.g, self.private_key, self.p)
+        print(f"  A = {self.g}^{self.private_key} mod {self.p}")
+        print(f"  A = {self.public_key}")
+        
+        # Exchange keys
+        print("\nExchanging keys...")
+        self.sock.send((json.dumps({'public_key': str(self.public_key)}) + '\n').encode())
+        data = self.sock.recv(4096).decode().strip()
+        self.bob_public_key = int(json.loads(data)['public_key'])
+        
+        # Compute secret
+        print("\nComputing shared secret...")
+        print(f"Computing: s = B^a mod p")
+        print(f"  B (received public key) = {self.bob_public_key}")
+        print(f"  a (Alice's private key) = {self.private_key}")
+        print(f"  p = {self.p}")
+        self.shared_secret = compute_shared_secret(self.bob_public_key, self.private_key, self.p)
+        print(f"  s = {self.bob_public_key}^{self.private_key} mod {self.p}")
+        print(f"  s = {self.shared_secret}")
+        self.aes_key = derive_key(self.shared_secret)
+        print(f"\nDeriving AES key: SHA-256(shared_secret)")
+        print(f"  AES key: {self.aes_key.hex()}")
+        
+        # Send message
+        message = input("\nYour message to Bob: ").strip()
+        if not message:
+            message = "Meet at the library"
+        print(f"\n--- Encryption Process ---")
+        print(f"Plaintext: '{message}'")
+        print(f"AES key: {self.aes_key.hex()}")
+        encrypted = simple_encrypt(message, self.aes_key)
+        encrypted_hex = encrypted.hex()
+        print(f"Ciphertext (hex): {encrypted_hex}")
+        print(f"Sending encrypted message...")
+        self.sock.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
+        
+        # Continuous chat
+        print("\n" + "="*60)
+        print("SECURE CHAT (type 'quit' to exit)")
+        print("="*60)
+        
+        while True:
+            # Wait for reply
+            print("\nWaiting for reply...")
+            try:
+                self.sock.settimeout(None)  # No timeout
+                data = recv_msg(self.sock)
+                if not data:
+                    print("Connection closed.")
+                    break
+                    
+                msg_data = json.loads(data)
+                encrypted_hex = msg_data['encrypted_message']
+                
+                if encrypted_hex == 'QUIT':
+                    print("\nBob ended the chat.")
+                    break
+                    
+                encrypted_bytes = bytes.fromhex(encrypted_hex)
+                decrypted = simple_decrypt(encrypted_bytes, self.aes_key)
+                print(f"\nBob: {decrypted}")
+            except Exception as e:
+                print(f"Error: {e}")
+                break
             
-            conn, addr = server_socket.accept()
-            print(f"[Bob] 'Alice' connected! (actually Eve)")
+            # Send message
+            message = input("\nYou: ").strip()
+            if not message:
+                continue
+            if message.lower() == 'quit':
+                print("Ending chat...")
+                self.sock.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
+                break
+                
+            encrypted = simple_encrypt(message, self.aes_key)
+            encrypted_hex = encrypted.hex()
+            self.sock.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
             
-            # Receive parameters and "Alice's" public key (actually Eve's)
-            data = conn.recv(4096)
-            message = json.loads(data.decode('utf-8'))
+        self.sock.close()
+        print("\nDone.")
+
+
+class Bob:
+    def __init__(self, port=5001):
+        self.port = port
+        self.sock = None
+        self.conn = None
+        self.bits = None
+        self.p = None
+        self.g = None
+        self.private_key = None
+        self.public_key = None
+        self.shared_secret = None
+        self.aes_key = None
+        self.alice_public_key = None
+        
+    def run(self):
+        print("\n" + "="*60)
+        print("Bob: Waiting for Connection")
+        print("="*60)
+        print(f"Listening on port {self.port}...")
+        
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(('localhost', self.port))
+        self.sock.listen(1)
+        
+        self.conn, addr = self.sock.accept()
+        print(f"Connected from {addr}")
+        
+        # Receive parameters
+        print("\nReceiving parameters...")
+        data = self.conn.recv(8192).decode().strip()
+        params = json.loads(data)
+        self.p = int(params['p'])
+        self.g = int(params['g'])
+        self.bits = int(params['bits'])
+        print(f"Using {self.bits}-bit parameters")
+        
+        # Generate keys
+        print("\nGenerating Bob's keys...")
+        self.private_key = generate_private_key(self.p)
+        print(f"Private key (b): {self.private_key}")
+        print(f"\nComputing public key: B = g^b mod p")
+        print(f"  g = {self.g}")
+        print(f"  b = {self.private_key}")
+        print(f"  p = {self.p}")
+        self.public_key = compute_public_key(self.g, self.private_key, self.p)
+        print(f"  B = {self.g}^{self.private_key} mod {self.p}")
+        print(f"  B = {self.public_key}")
+        
+        # Exchange keys
+        print("\nExchanging keys...")
+        data = self.conn.recv(4096).decode().strip()
+        self.alice_public_key = int(json.loads(data)['public_key'])
+        self.conn.send((json.dumps({'public_key': str(self.public_key)}) + '\n').encode())
+        
+        # Compute secret
+        print("\nComputing shared secret...")
+        print(f"Computing: s = A^b mod p")
+        print(f"  A (received public key) = {self.alice_public_key}")
+        print(f"  b (Bob's private key) = {self.private_key}")
+        print(f"  p = {self.p}")
+        self.shared_secret = compute_shared_secret(self.alice_public_key, self.private_key, self.p)
+        print(f"  s = {self.alice_public_key}^{self.private_key} mod {self.p}")
+        print(f"  s = {self.shared_secret}")
+        self.aes_key = derive_key(self.shared_secret)
+        print(f"\nDeriving AES key: SHA-256(shared_secret)")
+        print(f"  AES key: {self.aes_key.hex()}")
+        
+        # Receive first message
+        print("\nWaiting for message...")
+        data = recv_msg(self.conn)
+        msg_data = json.loads(data)
+        encrypted_hex = msg_data['encrypted_message']
+        print(f"\n--- Decryption Process ---")
+        print(f"Received ciphertext (hex): {encrypted_hex}")
+        print(f"AES key: {self.aes_key.hex()}")
+        encrypted_bytes = bytes.fromhex(encrypted_hex)
+        decrypted = simple_decrypt(encrypted_bytes, self.aes_key)
+        print(f"Plaintext: '{decrypted}'")
+        print(f"\nAlice: {decrypted}")
+        
+        # Continuous chat
+        print("\n" + "="*60)
+        print("SECURE CHAT (type 'quit' to exit)")
+        print("="*60)
+        
+        while True:
+            # Send reply
+            reply = input("\nYou: ").strip()
+            if not reply:
+                continue
+            if reply.lower() == 'quit':
+                print("Ending chat...")
+                self.conn.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
+                break
+                
+            encrypted = simple_encrypt(reply, self.aes_key)
+            encrypted_hex = encrypted.hex()
+            self.conn.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
             
-            self.receive_params_and_generate_keys(message['p'], message['g'])
-            self.compute_shared(message['public_key'])
+            # Receive message
+            print("\nWaiting for message...")
+            try:
+                data = recv_msg(self.conn)
+                if not data:
+                    print("Connection closed.")
+                    break
+                    
+                msg_data = json.loads(data)
+                encrypted_hex = msg_data['encrypted_message']
+                
+                if encrypted_hex == 'QUIT':
+                    print("\nAlice ended the chat.")
+                    break
+                    
+                encrypted_bytes = bytes.fromhex(encrypted_hex)
+                decrypted = simple_decrypt(encrypted_bytes, self.aes_key)
+                print(f"\nAlice: {decrypted}")
+            except Exception as e:
+                print(f"Error: {e}")
+                break
             
-            # Send public key back
-            response = {'public_key': self.public_key}
-            conn.send(json.dumps(response).encode('utf-8'))
-            print(f"[Bob] Sent public key to 'Alice'")
-            
-            # Receive encrypted message
-            msg_length = int.from_bytes(conn.recv(4), 'big')
-            encrypted = conn.recv(msg_length)
-            decrypted = simple_decrypt(encrypted, self.encryption_key)
-            
-            print(f"\n[Bob] Received encrypted message from 'Alice': '{decrypted}'")
-            
-            # Send response
-            response_msg = "Alice, confirmed. See you there! -Bob"
-            encrypted_response = simple_encrypt(response_msg, self.encryption_key)
-            
-            conn.send(len(encrypted_response).to_bytes(4, 'big'))
-            conn.send(encrypted_response)
-            print(f"[Bob] Sent response: '{response_msg}'")
-            print("[Bob] Secure communication established! (or so I think...)")
-            
-            conn.close()
-            
-        except Exception as e:
-            print(f"[Bob ERROR] {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            server_socket.close()
-            print("[Bob] Server closed.\n")
+        self.conn.close()
+        self.sock.close()
+        print("\nDone.")
 
 
 class Eve:
-    """
-    Eve - the attacker performing MITM.
-    She intercepts all communication and can read/modify everything!
-    """
-    
-    def __init__(self):
-        # Eve needs TWO key pairs - one for Alice, one for Bob
-        self.p = None
-        self.g = None
+    def __init__(self, alice_port=5000, bob_port=5001):
+        self.alice_port = alice_port
+        self.bob_port = bob_port
+        self.alice_conn = None
+        self.bob_sock = None
+        self.server_sock = None
         
-        # Keys for communicating with Alice
+        # Keys with Alice
         self.private_key_alice = None
         self.public_key_alice = None
+        self.alice_public_key = None
         self.shared_secret_alice = None
-        self.key_alice = None
+        self.aes_key_alice = None
         
-        # Keys for communicating with Bob
+        # Keys with Bob
         self.private_key_bob = None
         self.public_key_bob = None
+        self.bob_public_key = None
         self.shared_secret_bob = None
-        self.key_bob = None
+        self.aes_key_bob = None
         
-    def intercept_alice(self, alice_socket):
-        """Handle Alice's connection - impersonate Bob to Alice."""
-        try:
-            print("\n[Eve] Intercepting Alice's message...")
-            
-            # Receive from Alice
-            data = alice_socket.recv(4096)
-            alice_message = json.loads(data.decode('utf-8'))
-            
-            self.p = alice_message['p']
-            self.g = alice_message['g']
-            alice_public_key = alice_message['public_key']
-            
-            print(f"[Eve] Intercepted Alice's public key: {alice_public_key}")
-            print(f"[Eve] Parameters: p ({self.p.bit_length()} bits), g={self.g}")
-            
-            # Generate Eve's key pair for Alice
-            print("[Eve] Generating keys to trick Alice...")
-            self.private_key_alice = generate_private_key(self.p, secure=True)
-            self.public_key_alice = compute_public_key(self.g, self.private_key_alice, self.p)
-            
-            # Compute shared secret with Alice
-            self.shared_secret_alice = compute_shared_secret(
-                alice_public_key, self.private_key_alice, self.p
-            )
-            self.key_alice = derive_key(self.shared_secret_alice)
-            print(f"[Eve] Shared secret with Alice: {self.shared_secret_alice}")
-            
-            return alice_message
-            
-        except Exception as e:
-            print(f"[Eve ERROR with Alice] {e}")
-            raise
-    
-    def forward_to_bob(self, original_message):
-        """Forward to Bob - impersonate Alice to Bob."""
-        try:
-            print("\n[Eve] Connecting to real Bob...")
-            bob_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            
-            # Give Bob time to start
-            for i in range(5):
-                try:
-                    bob_socket.connect((HOST, PORT_BOB))
-                    break
-                except:
-                    if i == 4:
-                        raise
-                    time.sleep(1)
-            
-            print("[Eve] Connected to Bob!")
-            
-            # Generate different key pair for Bob
-            print("[Eve] Generating different keys to trick Bob...")
-            self.private_key_bob = generate_private_key(self.p, secure=True)
-            self.public_key_bob = compute_public_key(self.g, self.private_key_bob, self.p)
-            
-            # Send Eve's public key to Bob (pretending to be Alice)
-            fake_message = {
-                'p': self.p,
-                'g': self.g,
-                'public_key': self.public_key_bob  # Eve's key, not Alice's!
-            }
-            bob_socket.send(json.dumps(fake_message).encode('utf-8'))
-            print(f"[Eve] Sent fake 'Alice' public key to Bob: {self.public_key_bob}")
-            
-            # Receive Bob's public key
-            data = bob_socket.recv(4096)
-            bob_response = json.loads(data.decode('utf-8'))
-            bob_public_key = bob_response['public_key']
-            
-            print(f"[Eve] Intercepted Bob's public key: {bob_public_key}")
-            
-            # Compute shared secret with Bob
-            self.shared_secret_bob = compute_shared_secret(
-                bob_public_key, self.private_key_bob, self.p
-            )
-            self.key_bob = derive_key(self.shared_secret_bob)
-            print(f"[Eve] Shared secret with Bob: {self.shared_secret_bob}")
-            
-            return bob_socket, bob_response
-            
-        except Exception as e:
-            print(f"[Eve ERROR with Bob] {e}")
-            raise
-    
-    def proxy_messages(self, alice_socket, bob_socket, bob_response):
-        """Intercept and modify messages between Alice and Bob."""
-        try:
-            # Send "Bob's" public key to Alice (actually Eve's)
-            fake_response = {'public_key': self.public_key_alice}
-            alice_socket.send(json.dumps(fake_response).encode('utf-8'))
-            print("[Eve] Sent fake 'Bob' public key to Alice")
-            
-            print("\n" + "=" * 70)
-            print("ATTACK SUCCESSFUL! Eve has established two separate channels:")
-            print(f"  - Alice <--[secret: {self.shared_secret_alice}]--> Eve")
-            print(f"  - Eve <--[secret: {self.shared_secret_bob}]--> Bob")
-            print("Eve can now intercept and modify all messages!")
-            print("=" * 70)
-            
-            # Receive Alice's encrypted message
-            print("\n[Eve] Waiting for Alice's message...")
-            msg_length = int.from_bytes(alice_socket.recv(4), 'big')
-            encrypted_from_alice = alice_socket.recv(msg_length)
-            
-            # Decrypt Alice's message
-            decrypted_alice_msg = simple_decrypt(encrypted_from_alice, self.key_alice)
-            print(f"\n[Eve] 🕵️  INTERCEPTED Alice's message: '{decrypted_alice_msg}'")
-            
-            # Eve can modify the message!
-            modified_message = "Bob, plans have changed. Meet at the usual place at noon. -Alice"
-            print(f"[Eve] 😈 MODIFIED message: '{modified_message}'")
-            
-            # Re-encrypt with Bob's key and forward
-            encrypted_for_bob = simple_encrypt(modified_message, self.key_bob)
-            bob_socket.send(len(encrypted_for_bob).to_bytes(4, 'big'))
-            bob_socket.send(encrypted_for_bob)
-            print("[Eve] Forwarded modified message to Bob")
-            
-            # Receive Bob's response
-            msg_length = int.from_bytes(bob_socket.recv(4), 'big')
-            encrypted_from_bob = bob_socket.recv(msg_length)
-            
-            # Decrypt Bob's response
-            decrypted_bob_msg = simple_decrypt(encrypted_from_bob, self.key_bob)
-            print(f"\n[Eve] 🕵️  INTERCEPTED Bob's response: '{decrypted_bob_msg}'")
-            
-            # Optionally modify Bob's response too
-            # For now, forward it unmodified
-            encrypted_for_alice = simple_encrypt(decrypted_bob_msg, self.key_alice)
-            alice_socket.send(len(encrypted_for_alice).to_bytes(4, 'big'))
-            alice_socket.send(encrypted_for_alice)
-            print("[Eve] Forwarded Bob's response to Alice")
-            
-            print("\n" + "=" * 70)
-            print("MITM ATTACK COMPLETE!")
-            print("Alice and Bob think they communicated securely,")
-            print("but Eve intercepted and modified everything!")
-            print("=" * 70 + "\n")
-            
-        except Exception as e:
-            print(f"[Eve ERROR during proxy] {e}")
-            import traceback
-            traceback.print_exc()
-    
+        self.p = None
+        self.g = None
+        self.bits = None
+        self.original_message = None
+        self.modified_message = None
+        
+        # Track all intercepted messages
+        self.intercepted_messages = []
+        
     def run(self):
-        """Run Eve's MITM attack."""
-        print("=" * 70)
-        print("EVE - Starting Man-in-the-Middle Attack")
-        print("=" * 70)
-        print("[Eve] This demonstrates the vulnerability of unauthenticated DHKE")
-        print("[Eve] Setting up proxy server...\n")
+        print("\n" + "="*60)
+        print("Eve: Man-in-the-Middle Attack")
+        print("="*60)
+        print(f"\nPositioning between Alice and Bob...")
+        print(f"  Listening on port {self.alice_port} (pretending to be Bob)")
+        print(f"  Connecting to real Bob on port {self.bob_port}")
         
-        # Create server socket for Alice
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Setup fake Bob for Alice
+        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_sock.bind(('localhost', self.alice_port))
+        self.server_sock.listen(1)
         
+        # Connect to real Bob
+        self.bob_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            server_socket.bind((HOST, PORT_EVE))
-            server_socket.listen(1)
-            print(f"[Eve] Listening on {HOST}:{PORT_EVE} (waiting for Alice)...")
+            self.bob_sock.connect(('localhost', self.bob_port))
+            print("  Connected to Bob")
+        except ConnectionRefusedError:
+            print("ERROR: Cannot connect to Bob!")
+            sys.exit(1)
+        
+        # Wait for Alice
+        print("  Waiting for Alice...")
+        self.alice_conn, addr = self.server_sock.accept()
+        print("  Alice connected! MITM active.")
+        
+        # Intercept parameters
+        print("\nIntercepting parameters...")
+        data = self.alice_conn.recv(8192).decode().strip()
+        params = json.loads(data)
+        self.p = int(params['p'])
+        self.g = int(params['g'])
+        self.bits = int(params['bits'])
+        print(f"Parameters: {self.bits}-bit")
+        self.bob_sock.send(data.encode())
+        
+        # Generate Eve's two key pairs
+        print("\n--- Eve Generates TWO Key Pairs ---")
+        print("\nFor Alice-Eve channel:")
+        self.private_key_alice = generate_private_key(self.p)
+        print(f"  Eve's private key (e1): {self.private_key_alice}")
+        self.public_key_alice = compute_public_key(self.g, self.private_key_alice, self.p)
+        print(f"  Eve's public key: E1 = {self.g}^{self.private_key_alice} mod {self.p} = {self.public_key_alice}")
+        
+        print("\nFor Eve-Bob channel:")
+        self.private_key_bob = generate_private_key(self.p)
+        print(f"  Eve's private key (e2): {self.private_key_bob}")
+        self.public_key_bob = compute_public_key(self.g, self.private_key_bob, self.p)
+        print(f"  Eve's public key: E2 = {self.g}^{self.private_key_bob} mod {self.p} = {self.public_key_bob}")
+        
+        # Intercept key exchange
+        print("\nIntercepting keys...")
+        # Get Alice's real key
+        data = self.alice_conn.recv(4096).decode().strip()
+        self.alice_public_key = int(json.loads(data)['public_key'])
+        
+        # Send Eve's key to Bob (pretending to be Alice)
+        fake_alice = json.dumps({'public_key': str(self.public_key_bob)}) + '\n'
+        self.bob_sock.send(fake_alice.encode())
+        
+        # Get Bob's real key
+        data = self.bob_sock.recv(4096).decode().strip()
+        self.bob_public_key = int(json.loads(data)['public_key'])
+        
+        # Send Eve's key to Alice (pretending to be Bob)
+        fake_bob = json.dumps({'public_key': str(self.public_key_alice)}) + '\n'
+        self.alice_conn.send(fake_bob.encode())
+        print("\n--- Key Replacement Attack ---")
+        print(f"  Alice thinks Bob's key is: {self.public_key_alice}")
+        print(f"  Bob thinks Alice's key is: {self.public_key_bob}")
+        print(f"  (Both are actually Eve's keys!)")
+        
+        # Compute both secrets
+        print("\n--- Computing TWO Different Shared Secrets ---")
+        print("\nWith Alice:")
+        print(f"  s1 = A^e1 mod p = {self.alice_public_key}^{self.private_key_alice} mod {self.p}")
+        self.shared_secret_alice = compute_shared_secret(
+            self.alice_public_key, self.private_key_alice, self.p
+        )
+        print(f"  s1 = {self.shared_secret_alice}")
+        self.aes_key_alice = derive_key(self.shared_secret_alice)
+        print(f"  AES key (Alice-Eve): {self.aes_key_alice.hex()}")
+        
+        print("\nWith Bob:")
+        print(f"  s2 = B^e2 mod p = {self.bob_public_key}^{self.private_key_bob} mod {self.p}")
+        self.shared_secret_bob = compute_shared_secret(
+            self.bob_public_key, self.private_key_bob, self.p
+        )
+        print(f"  s2 = {self.shared_secret_bob}")
+        self.aes_key_bob = derive_key(self.shared_secret_bob)
+        print(f"  AES key (Eve-Bob): {self.aes_key_bob.hex()}")
+        print(f"\n  ⚠️  MITM SUCCESS: Eve has TWO DIFFERENT secrets!")
+        
+        # Intercept message
+        print("\n--- Intercepting Alice's Message ---")
+        data = recv_msg(self.alice_conn)
+        msg_data = json.loads(data)
+        encrypted_hex = msg_data['encrypted_message']
+        print(f"Received ciphertext (hex): {encrypted_hex}")
+        print(f"Decrypting with Alice-Eve key: {self.aes_key_alice.hex()}")
+        encrypted_bytes = bytes.fromhex(encrypted_hex)
+        self.original_message = simple_decrypt(encrypted_bytes, self.aes_key_alice)
+        print(f"Plaintext: '{self.original_message}'")
+        
+        # Ask to modify
+        print("\nOptions:")
+        print("  1. Forward original")
+        print("  2. Modify message")
+        choice = input("Choice (1-2): ").strip()
+        
+        if choice == '2':
+            modified = input("Modified message: ").strip()
+            self.modified_message = modified if modified else self.original_message
+            if modified:
+                print(f"Changed to: '{self.modified_message}'")
+        else:
+            self.modified_message = self.original_message
+        
+        # Track for analysis
+        self.intercepted_messages.append({
+            'direction': 'Alice->Bob',
+            'original': self.original_message,
+            'forwarded': self.modified_message
+        })
+        
+        # Forward to Bob
+        print(f"\n--- Re-encrypting for Bob ---")
+        print(f"Plaintext: '{self.modified_message}'")
+        print(f"Encrypting with Eve-Bob key: {self.aes_key_bob.hex()}")
+        new_encrypted = simple_encrypt(self.modified_message, self.aes_key_bob)
+        new_encrypted_hex = new_encrypted.hex()
+        print(f"New ciphertext (hex): {new_encrypted_hex}")
+        self.bob_sock.send((json.dumps({'encrypted_message': new_encrypted_hex}) + '\n').encode())
+        print("Forwarded to Bob")
+        
+        # Continuous interception loop
+        print("\n" + "="*60)
+        print("CONTINUOUS MITM INTERCEPTION (type 'quit' to stop)")
+        print("="*60)
+        
+        while True:
+            # Intercept Bob's reply
+            print("\nWaiting for Bob's reply...")
+            try:
+                data = recv_msg(self.bob_sock)
+                if not data:
+                    print("Connection closed.")
+                    break
+                    
+                msg_data = json.loads(data)
+                encrypted_hex = msg_data['encrypted_message']
+                
+                if encrypted_hex == 'QUIT':
+                    print("\nBob ended the chat.")
+                    self.alice_conn.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
+                    break
+                    
+                encrypted_bytes = bytes.fromhex(encrypted_hex)
+                reply = simple_decrypt(encrypted_bytes, self.aes_key_bob)
+                print(f"Bob -> Alice: '{reply}'")
+                
+                # Track for analysis
+                self.intercepted_messages.append({
+                    'direction': 'Bob->Alice',
+                    'original': reply,
+                    'forwarded': reply
+                })
+                
+                # Forward to Alice
+                new_encrypted = simple_encrypt(reply, self.aes_key_alice)
+                new_encrypted_hex = new_encrypted.hex()
+                self.alice_conn.send((json.dumps({'encrypted_message': new_encrypted_hex}) + '\n').encode())
+                print("Forwarded to Alice")
+            except Exception as e:
+                print(f"Error: {e}")
+                break
             
-            # Wait for Alice to connect
-            alice_socket, addr = server_socket.accept()
-            print(f"[Eve] Alice connected from {addr}!")
-            
-            # Intercept Alice's message
-            original_message = self.intercept_alice(alice_socket)
-            
-            # Forward to Bob (with different key)
-            bob_socket, bob_response = self.forward_to_bob(original_message)
-            
-            # Proxy messages between them
-            self.proxy_messages(alice_socket, bob_socket, bob_response)
-            
-            # Clean up
-            alice_socket.close()
-            bob_socket.close()
-            
-        except Exception as e:
-            print(f"[Eve ERROR] {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            server_socket.close()
-            print("[Eve] Proxy closed.")
+            # Intercept Alice's next message
+            print("\nWaiting for Alice's message...")
+            try:
+                data = recv_msg(self.alice_conn)
+                if not data:
+                    print("Connection closed.")
+                    break
+                    
+                msg_data = json.loads(data)
+                encrypted_hex = msg_data['encrypted_message']
+                
+                if encrypted_hex == 'QUIT':
+                    print("\nAlice ended the chat.")
+                    self.bob_sock.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
+                    break
+                    
+                encrypted_bytes = bytes.fromhex(encrypted_hex)
+                message = simple_decrypt(encrypted_bytes, self.aes_key_alice)
+                print(f"Alice -> Bob: '{message}'")
+                
+                # Ask to modify
+                print("\nOptions: (1) Forward original (2) Modify (3) Drop")
+                choice = input("Choice (1-3, default=1): ").strip()
+                
+                if choice == '3':
+                    print("Message dropped! (Bob won't receive anything)")
+                    self.intercepted_messages.append({
+                        'direction': 'Alice->Bob',
+                        'original': message,
+                        'forwarded': '[DROPPED]'
+                    })
+                    # Skip waiting for Bob's reply since he didn't get a message
+                    continue
+                
+                forward_message = message
+                if choice == '2':
+                    modified = input("Modified message: ").strip()
+                    if modified:
+                        forward_message = modified
+                        print(f"Modified to: '{forward_message}'")
+                
+                # Track for analysis
+                self.intercepted_messages.append({
+                    'direction': 'Alice->Bob',
+                    'original': message,
+                    'forwarded': forward_message
+                })
+                
+                # Forward to Bob
+                new_encrypted = simple_encrypt(forward_message, self.aes_key_bob)
+                new_encrypted_hex = new_encrypted.hex()
+                self.bob_sock.send((json.dumps({'encrypted_message': new_encrypted_hex}) + '\n').encode())
+                print("Forwarded to Bob")
+            except Exception as e:
+                print(f"Error: {e}")
+                break
+        
+        # Show analysis
+        print("\n" + "="*60)
+        print("ATTACK ANALYSIS")
+        print("="*60)
+        print("\nShared secrets (should be same, but aren't):")
+        print(f"  Alice's: {hex(self.shared_secret_alice)[:50]}...")
+        print(f"  Bob's:   {hex(self.shared_secret_bob)[:50]}...")
+        print(f"  Result:  DIFFERENT - Eve has separate secrets!")
+        
+        print(f"\nIntercepted {len(self.intercepted_messages)} messages:")
+        modified_count = 0
+        dropped_count = 0
+        for i, msg in enumerate(self.intercepted_messages, 1):
+            if msg['forwarded'] == '[DROPPED]':
+                print(f"  {i}. {msg['direction']}: '{msg['original']}' -> [DROPPED]")
+                dropped_count += 1
+            elif msg['original'] != msg['forwarded']:
+                print(f"  {i}. {msg['direction']}: '{msg['original']}' -> '{msg['forwarded']}'")
+                modified_count += 1
+            else:
+                print(f"  {i}. {msg['direction']}: '{msg['original']}' [unmodified]")
+        
+        if modified_count > 0:
+            print(f"\n  Result: {modified_count} message(s) MODIFIED!")
+        if dropped_count > 0:
+            print(f"  Result: {dropped_count} message(s) DROPPED!")
+        if modified_count == 0 and dropped_count == 0:
+            print(f"\n  Result: All messages forwarded unmodified (but Eve saw everything!)")
+        
+        print("\nDetection: IMPOSSIBLE without authentication")
+        
+        # Brute force if weak
+        if self.bits <= 23:
+            print("\n" + "="*60)
+            print("BRUTE FORCE ATTACK")
+            print("="*60)
+            print(f"Attempting to crack {self.bits}-bit key...")
+            start = time.time()
+            found = brute_force_discrete_log(
+                self.alice_public_key, self.g, self.p, max_attempts=2**25
+            )
+            elapsed = time.time() - start
+            if found:
+                print(f"SUCCESS! Cracked in {elapsed:.2f} seconds")
+                print(f"Alice's private key: {hex(found)}")
+            else:
+                print(f"Failed in {elapsed:.2f} seconds")
+        
+        print("\n" + "="*60)
+        print("Recommendations:")
+        print("  1. Use 2048-bit or larger parameters")
+        print("  2. Add authentication (certificates, signatures)")
+        print("  3. Use TLS/SSL protocols")
+        print("="*60)
+        
+        # Cleanup
+        if self.alice_conn:
+            self.alice_conn.close()
+        if self.bob_sock:
+            self.bob_sock.close()
+        if self.server_sock:
+            self.server_sock.close()
+        print("\nDone.")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='MITM Attack on Diffie-Hellman Key Exchange'
-    )
-    parser.add_argument('--alice', action='store_true', help='Run as Alice')
-    parser.add_argument('--bob', action='store_true', help='Run as Bob')
-    parser.add_argument('--eve', action='store_true', help='Run as Eve (attacker)')
+    parser = argparse.ArgumentParser(description='DHKE with MITM Attack')
+    parser.add_argument('--alice', action='store_true')
+    parser.add_argument('--bob', action='store_true')
+    parser.add_argument('--eve', action='store_true')
+    parser.add_argument('--alice-port', type=int, default=5000)
+    parser.add_argument('--bob-port', type=int, default=5001)
     
     args = parser.parse_args()
     
-    if args.alice:
-        alice = AliceMITM(bit_length=1024)
-        alice.run()
-    elif args.bob:
-        bob = BobMITM()
-        bob.run()
-    elif args.eve:
-        eve = Eve()
-        eve.run()
-    else:
-        print("Man-in-the-Middle Attack Demonstration")
-        print("\nThis demonstrates how DHKE fails without authentication!")
-        print("\nUsage (start in this order):")
-        print("  Terminal 1: python dhke_mitm.py --bob")
-        print("  Terminal 2: python dhke_mitm.py --eve")
-        print("  Terminal 3: python dhke_mitm.py --alice")
-        print("\nEve will intercept and modify all communication between Alice and Bob!")
-        sys.exit(1)
+    try:
+        if args.alice:
+            alice = Alice(port=args.alice_port)
+            alice.run()
+        elif args.bob:
+            bob = Bob(port=args.bob_port)
+            bob.run()
+        elif args.eve:
+            eve = Eve(alice_port=args.alice_port, bob_port=args.bob_port)
+            eve.run()
+        else:
+            print("Usage:")
+            print("  Terminal 1: python dhke_mitm.py --bob")
+            print("  Terminal 2: python dhke_mitm.py --eve")
+            print("  Terminal 3: python dhke_mitm.py --alice")
+    except KeyboardInterrupt:
+        print("\n\nInterrupted.")
+    except Exception as e:
+        print(f"\nError: {e}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
