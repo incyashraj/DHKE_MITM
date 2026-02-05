@@ -288,7 +288,7 @@ In TLS:
 
 Our implementation shows what happens WITHOUT this authentication.
 
-## 🎯 Key Takeaways for Presentation
+## for Presentation
 
 ### Strengths of DHKE:
 Enables key agreement without prior shared secrets  
