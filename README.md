@@ -133,60 +133,14 @@ python dhke_mitm.py --alice
 - Neither victim detects the attack
 - This is why TLS requires certificate authentication
 
-### c. MANUAL MODE
+### Usage Notes
 
-Choose security parameters (23/512/1024/2048-bit)
-See connection establishment details
-Type your own messages
-Watch key generation step-by-step
-Control when Eve intercepts and modifies messages
-Attempt brute force on weak parameters
-
-#### Direct Secure Communication:
-
-**Terminal 1** (Bob - Receiver):
-```bash
-python dhke_manual.py --bob
-```
-
-**Terminal 2** (Alice - Sender):
-```bash
-python dhke_manual.py --alice
-```
-
-You'll be prompted to:
-- Select security parameters (1-4)
-- Press ENTER between each protocol step
-- Type custom messages to send
-- Watch encryption/decryption happen live
-
-#### MITM Attack (with Full Control):
-
-**Terminal 1** (Bob on port 5001):
-```bash
-python dhke_manual.py --bob --bob-port 5001
-```
-
-**Terminal 2** (Eve - The attacker):
-```bash
-python dhke_manual.py --eve --alice-port 5000 --bob-port 5001
-```
-
-**Terminal 3** (Alice connects to Eve):
-```bash
-python dhke_manual.py --alice --alice-port 5000
-```
-
-In this mode, you can:
-- **See Eve intercept parameters and keys**
-- **Watch Eve generate TWO different key pairs**
-- **Control when Eve decrypts messages**
-- **Choose to modify messages or forward originals**
-- **See attack summary with different secrets**
-- **Attempt brute force if using weak parameters**
-
-Understanding MITM attack mechanics
-Showing security parameter impact
+**Interactive Features**:
+- Choose security parameters (23/512/1024/2048-bit) at startup
+- Type your own messages in the chat
+- See detailed key generation and encryption steps
+- Watch Eve intercept and optionally modify messages in MITM mode
+- View comprehensive attack analysis at the end
 
 ## Technical Details
 
