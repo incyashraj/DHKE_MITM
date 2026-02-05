@@ -277,6 +277,58 @@ class Bob:
             print(f"Ciphertext (hex): {encrypted_hex}")
             print(f"Sending encrypted reply to Alice...")
             self.conn.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
+    
+    def chat(self):
+        print("\n" + "="*60)
+        print("SECURE CHAT (type 'quit' to exit)")
+        print("="*60)
+        
+        while True:
+            # Receive message from Alice
+            print("\nWaiting for message from Alice...")
+            try:
+                self.conn.settimeout(None)  # No timeout - wait indefinitely
+                data = recv_msg(self.conn)
+                if not data:
+                    print("Connection closed.")
+                    break
+                    
+                msg_data = json.loads(data)
+                encrypted_hex = msg_data['encrypted_message']
+                
+                if encrypted_hex == 'QUIT':
+                    print("\nAlice ended the chat.")
+                    break
+                    
+                print(f"\n--- Decryption Process ---")
+                print(f"Received ciphertext (hex): {encrypted_hex}")
+                print(f"AES key: {self.aes_key.hex()}")
+                encrypted_bytes = bytes.fromhex(encrypted_hex)
+                decrypted = simple_decrypt(encrypted_bytes, self.aes_key)
+                print(f"Plaintext: '{decrypted}'")
+                print(f"\nAlice: {decrypted}")
+                
+                # Send reply
+                message = input("\nYou: ").strip()
+                if not message:
+                    continue
+                if message.lower() == 'quit':
+                    print("Ending chat...")
+                    self.conn.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
+                    break
+                    
+                print(f"\n--- Encryption Process ---")
+                print(f"Plaintext: '{message}'")
+                print(f"AES key: {self.aes_key.hex()}")
+                encrypted = simple_encrypt(message, self.aes_key)
+                encrypted_hex = encrypted.hex()
+                print(f"Ciphertext (hex): {encrypted_hex}")
+                print(f"Sending...")
+                self.conn.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
+                
+            except Exception as e:
+                print(f"Error: {e}")
+                break
             
     def run(self):
         self.setup_server()
