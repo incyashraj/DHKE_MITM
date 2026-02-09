@@ -73,9 +73,7 @@ class PassiveEve:
         """
         Simulate packet sniffing - get captured data from user
         """
-        print("─" * 70)
-        print("STEP 1: What security parameters did they use?")
-        print("─" * 70)
+        print("What security parameters did they use?")
         print("1. 23-bit (weak)")
         print("2. 512-bit")
         print("3. 1024-bit")
@@ -85,36 +83,34 @@ class PassiveEve:
         self.bits = bits_map.get(choice, 23)
         self.p, self.g = get_dh_params(self.bits)
         
-        print(f"\n✓ Parameters: {self.bits}-bit (p={self.p}, g={self.g})")
+        print(f"\n Parameters: {self.bits}-bit (p={self.p}, g={self.g})")
         
         # Get Alice's public key
-        print("\n" + "─" * 70)
-        print("STEP 2: Capture Alice's Public Key A")
-        print("─" * 70)
+        print("\n")
+        print("Capture Alice's Public Key A")
         alice_pub_input = input("Alice's A: ").strip()
         try:
             self.alice_public_key = int(alice_pub_input)
-            print(f"✓ Captured: {self.alice_public_key}")
+            print(f" Captured: {self.alice_public_key}")
         except ValueError:
-            print("ERROR: Invalid number")
+            print("Invalid number")
             sys.exit(1)
         
         # Get Bob's public key
-        print("\n" + "─" * 70)
-        print("STEP 3: Capture Bob's Public Key B")
-        print("─" * 70)
+        print("\n")
+        print("Capture Bob's Public Key B")
+        print("\n")
         bob_pub_input = input("Bob's B: ").strip()
         try:
             self.bob_public_key = int(bob_pub_input)
-            print(f"✓ Captured: {self.bob_public_key}")
+            print(f" Captured: {self.bob_public_key}")
         except ValueError:
-            print("ERROR: Invalid number")
+            print("Invalid number")
             sys.exit(1)
         
         # Get encrypted messages
-        print("\n" + "─" * 70)
-        print("STEP 4: Capture Encrypted Messages")
-        print("─" * 70)
+        print("\n")
+        print("Capture Encrypted Messages")
         print("Paste ciphertext (hex) - one per line, 'done' to finish:\n")
         
         while True:
@@ -123,15 +119,14 @@ class PassiveEve:
                 break
             if ciphertext:
                 self.captured_messages.append(ciphertext)
-                print(f"  ✓ Captured message {len(self.captured_messages)}")
+                print(f" Captured message {len(self.captured_messages)}")
         
-        print(f"\n✓ Total messages captured: {len(self.captured_messages)}")
+        print(f"\n Total messages captured: {len(self.captured_messages)}")
     
     def analyze_security(self):
         """Analyze whether attack is feasible"""
-        print("\n" + "="*70)
+        print("\n")
         print("ANALYZING SECURITY")
-        print("="*70)
         
         print(f"\nParameter size: {self.bits}-bit")
         print(f"Search space: [1, {self.p-1}]")
@@ -140,10 +135,10 @@ class PassiveEve:
         print(f"Brute force time: {estimated_time}")
         
         if self.bits == 23:
-            print("\n✓ ATTACK IS FEASIBLE - Attempting brute force...")
+            print("\n ATTACK IS FEASIBLE - Attempting brute force...")
             return True
         else:
-            print("\n✗ ATTACK IS INFEASIBLE - Cannot break strong parameters")
+            print("\n ATTACK IS INFEASIBLE - Cannot break strong parameters")
             return False
     
     def attempt_break(self):
@@ -154,15 +149,14 @@ class PassiveEve:
             print("\n" + "="*70)
             print("RESULT: ATTACK FAILED")
             print("="*70)
-            print("\n🛡️  Alice and Bob are SAFE!")
+            print("\n Alice and Bob are SAFE!")
             print("   Large parameters protect against passive attacks.")
             print("   Eve cannot decrypt without solving DLP (infeasible).")
             return False
         
         # Attempt brute force (only for weak parameters)
-        print("\n" + "="*70)
+        print("\n")
         print("ATTEMPTING BRUTE FORCE")
-        print("="*70)
         
         print("\nSearching for Alice's private key 'a' where A = g^a mod p...")
         
@@ -175,10 +169,10 @@ class PassiveEve:
         elapsed = time.time() - start_time
         
         if not self.alice_private_key:
-            print(f"\n✗ Failed after {elapsed:.2f} seconds")
+            print(f"\n Failed after {elapsed:.2f} seconds")
             return False
         
-        print(f"\n✓ FOUND! Alice's private key: a = {self.alice_private_key}")
+        print(f"\n FOUND! Alice's private key: a = {self.alice_private_key}")
         print(f"   Time taken: {elapsed:.3f} seconds")
         
         # Compute shared secret
@@ -199,12 +193,11 @@ class PassiveEve:
     def decrypt_messages(self):
         """Decrypt all captured messages using stolen key"""
         if not self.aes_key:
-            print("\n✗ Cannot decrypt - no key available")
+            print("\n Cannot decrypt - no key available")
             return
         
-        print("\n" + "="*70)
+        print("\n")
         print("DECRYPTING MESSAGES")
-        print("="*70)
         
         if not self.captured_messages:
             print("\nNo messages captured.")
@@ -220,28 +213,27 @@ class PassiveEve:
                 print(f"Message {i}:")
                 print(f"  Ciphertext: {ciphertext_hex}")
                 print(f"  Plaintext:  '{plaintext}'")
-                print(f"  ✓ DECRYPTED!\n")
+                print(f"  DECRYPTED!\n")
             except Exception as e:
                 print(f"Message {i}: Decryption failed - {e}\n")
     
     def show_summary(self):
         """Display attack summary"""
-        print("\n" + "="*70)
+        print("\n")
         print("ATTACK SUMMARY")
-        print("="*70)
         
         if self.alice_private_key:
-            print(f"\n💥 ATTACK SUCCESSFUL!")
+            print(f"\n ATTACK SUCCESSFUL!")
             print(f"   Security: {self.bits}-bit (WEAK)")
             print(f"   Private key found: {self.alice_private_key}")
             print(f"   Decrypted: {len(self.captured_messages)} message(s)")
-            print(f"\n⚠️  LESSON: Weak parameters ({self.bits}-bit) are INSECURE")
+            print(f"\n LESSON: Weak parameters ({self.bits}-bit) are INSECURE")
             print(f"   Use 2048-bit minimum for real security!")
         else:
-            print(f"\n🛡️  ATTACK FAILED")
+            print(f"\n ATTACK FAILED")
             print(f"   Security: {self.bits}-bit (STRONG)")
             print(f"   Brute force computationally infeasible")
-            print(f"\n✓ LESSON: Strong parameters prevent passive attacks")
+            print(f"\n LESSON: Strong parameters prevent passive attacks")
             print(f"   Even with public keys + ciphertext, Eve cannot decrypt")
     
     def run(self):

@@ -74,7 +74,7 @@ def get_dh_params(bit_length=2048):
     elif bit_length == 512:
         return PRIME_512, GENERATOR
     elif bit_length == "weak" or bit_length == 23:
-        return PRIME_WEAK, 5  # Use g=5 for the small prime
+        return PRIME_WEAK, 5
     else:
         raise ValueError(f"Unsupported bit length: {bit_length}")
 

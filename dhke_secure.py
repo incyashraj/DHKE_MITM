@@ -45,13 +45,11 @@ class Alice:
         self.bob_public_key = None
         
     def select_parameters(self):
-        print("\n" + "="*60)
-        print("Alice: Select Security Parameters")
-        print("="*60)
-        print("1. 23-bit   (weak - demo only)")
-        print("2. 512-bit  (weak - deprecated)")
+        print("Select Security Parameters")
+        print("1. 23-bit   (just demonstration)")
+        print("2. 512-bit  (weak)")
         print("3. 1024-bit (moderate)")
-        print("4. 2048-bit (strong - recommended)")
+        print("4. 2048-bit (strong)")
         
         choice = input("\nChoice (1-4): ").strip()
         bits_map = {'1': 23, '2': 512, '3': 1024, '4': 2048}
@@ -69,7 +67,7 @@ class Alice:
             self.sock.connect(('localhost', self.port))
             print("Connected.")
         except ConnectionRefusedError:
-            print("ERROR: Cannot connect. Start Bob first!")
+            print("Cannot connect. Start Bob")
             sys.exit(1)
             
     def send_parameters(self):
@@ -94,7 +92,7 @@ class Alice:
         self.sock.send((json.dumps({'public_key': str(self.public_key)}) + '\n').encode())
         data = recv_msg(self.sock)
         if not data:
-            print("ERROR: No response from Bob")
+            print("No response from Bob")
             sys.exit(1)
         self.bob_public_key = int(json.loads(data)['public_key'])
         print(f"Received Bob's public key: {hex(self.bob_public_key)[:40]}...")
@@ -113,9 +111,7 @@ class Alice:
         print(f"  AES key: {self.aes_key.hex()}")
         
     def chat(self):
-        print("\n" + "="*60)
-        print("SECURE CHAT (type 'quit' to exit)")
-        print("="*60)
+        print("SECURE CHAT ('quit' to exit)")
         
         while True:
             # Send message
@@ -127,7 +123,7 @@ class Alice:
                 self.sock.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
                 break
                 
-            print(f"\n--- Encryption Process ---")
+            print(f"\n Encryption Process")
             print(f"Plaintext: '{message}'")
             print(f"AES key: {self.aes_key.hex()}")
             encrypted = simple_encrypt(message, self.aes_key)
@@ -152,7 +148,7 @@ class Alice:
                     print("\nBob ended the chat.")
                     break
                     
-                print(f"\n--- Decryption Process ---")
+                print(f"\n Decryption Process")
                 print(f"Received ciphertext (hex): {encrypted_hex}")
                 print(f"AES key: {self.aes_key.hex()}")
                 encrypted_bytes = bytes.fromhex(encrypted_hex)
@@ -191,8 +187,7 @@ class Bob:
         
     def setup_server(self):
         print("\n" + "="*60)
-        print("Bob: Waiting for Connection")
-        print("="*60)
+        print("Waiting for Connection from A")
         print(f"Listening on port {self.port}...")
         
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -279,9 +274,8 @@ class Bob:
             self.conn.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
     
     def chat(self):
-        print("\n" + "="*60)
+        print("\n")
         print("SECURE CHAT (type 'quit' to exit)")
-        print("="*60)
         
         while True:
             # Receive message from Alice
@@ -346,7 +340,7 @@ def main():
     parser = argparse.ArgumentParser(description='Diffie-Hellman Key Exchange')
     parser.add_argument('--alice', action='store_true', help='Run as Alice')
     parser.add_argument('--bob', action='store_true', help='Run as Bob')
-    parser.add_argument('--port', type=int, default=5000, help='Port number')
+    parser.add_argument('--port', type=int, default=5100, help='Port number')
     
     args = parser.parse_args()
     

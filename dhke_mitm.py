@@ -48,13 +48,12 @@ class Alice:
         self.bob_public_key = None
         
     def select_parameters(self):
-        print("\n" + "="*60)
-        print("Alice: Select Security Parameters")
-        print("="*60)
-        print("1. 23-bit   (weak - breakable)")
-        print("2. 512-bit  (weak - deprecated)")
-        print("3. 1024-bit (moderate)")
-        print("4. 2048-bit (strong)")
+        print("\n")
+        print("Select Security Parameters")
+        print("1. 23-bit")
+        print("2. 512-bit")
+        print("3. 1024-bit")
+        print("4. 2048-bit")
         
         choice = input("\nChoice (1-4): ").strip()
         bits_map = {'1': 23, '2': 512, '3': 1024, '4': 2048}
@@ -71,7 +70,7 @@ class Alice:
             self.sock.connect(('localhost', self.port))
             print("Connected.")
         except ConnectionRefusedError:
-            print("ERROR: Cannot connect!")
+            print("Cannot connect")
             sys.exit(1)
         
         # Send parameters
@@ -94,7 +93,10 @@ class Alice:
         # Exchange keys
         print("\nExchanging keys...")
         self.sock.send((json.dumps({'public_key': str(self.public_key)}) + '\n').encode())
-        data = self.sock.recv(4096).decode().strip()
+        data = recv_msg(self.sock)
+        if not data:
+            print("ERROR: No response from Bob")
+            sys.exit(1)
         self.bob_public_key = int(json.loads(data)['public_key'])
         
         # Compute secret
@@ -114,7 +116,7 @@ class Alice:
         message = input("\nYour message to Bob: ").strip()
         if not message:
             message = "Meet at the library"
-        print(f"\n--- Encryption Process ---")
+        print(f"\nEncryption Process")
         print(f"Plaintext: '{message}'")
         print(f"AES key: {self.aes_key.hex()}")
         encrypted = simple_encrypt(message, self.aes_key)
@@ -124,9 +126,8 @@ class Alice:
         self.sock.send((json.dumps({'encrypted_message': encrypted_hex}) + '\n').encode())
         
         # Continuous chat
-        print("\n" + "="*60)
+        print("\n")
         print("SECURE CHAT (type 'quit' to exit)")
-        print("="*60)
         
         while True:
             # Wait for reply
@@ -184,9 +185,8 @@ class Bob:
         self.alice_public_key = None
         
     def run(self):
-        print("\n" + "="*60)
-        print("Bob: Waiting for Connection")
-        print("="*60)
+        print("\n")
+        print("Waiting for Connection from A")
         print(f"Listening on port {self.port}...")
         
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -199,7 +199,10 @@ class Bob:
         
         # Receive parameters
         print("\nReceiving parameters...")
-        data = self.conn.recv(8192).decode().strip()
+        data = recv_msg(self.conn)
+        if not data:
+            print("ERROR: No parameters received")
+            sys.exit(1)
         params = json.loads(data)
         self.p = int(params['p'])
         self.g = int(params['g'])
@@ -220,7 +223,10 @@ class Bob:
         
         # Exchange keys
         print("\nExchanging keys...")
-        data = self.conn.recv(4096).decode().strip()
+        data = recv_msg(self.conn)
+        if not data:
+            print("ERROR: No key received from Alice")
+            sys.exit(1)
         self.alice_public_key = int(json.loads(data)['public_key'])
         self.conn.send((json.dumps({'public_key': str(self.public_key)}) + '\n').encode())
         
@@ -242,7 +248,7 @@ class Bob:
         data = recv_msg(self.conn)
         msg_data = json.loads(data)
         encrypted_hex = msg_data['encrypted_message']
-        print(f"\n--- Decryption Process ---")
+        print(f"\n Decryption Process")
         print(f"Received ciphertext (hex): {encrypted_hex}")
         print(f"AES key: {self.aes_key.hex()}")
         encrypted_bytes = bytes.fromhex(encrypted_hex)
@@ -251,9 +257,8 @@ class Bob:
         print(f"\nAlice: {decrypted}")
         
         # Continuous chat
-        print("\n" + "="*60)
+        print("\n")
         print("SECURE CHAT (type 'quit' to exit)")
-        print("="*60)
         
         while True:
             # Send reply
@@ -261,7 +266,7 @@ class Bob:
             if not reply:
                 continue
             if reply.lower() == 'quit':
-                print("Ending chat...")
+                print("Ending chat")
                 self.conn.send((json.dumps({'encrypted_message': 'QUIT'}) + '\n').encode())
                 break
                 
@@ -328,10 +333,9 @@ class Eve:
         self.intercepted_messages = []
         
     def run(self):
-        print("\n" + "="*60)
-        print("Eve: Man-in-the-Middle Attack")
-        print("="*60)
-        print(f"\nPositioning between Alice and Bob...")
+        print("\n")
+        print("Eve: MITM")
+        print(f"\nPositioning between Alice and Bob")
         print(f"  Listening on port {self.alice_port} (pretending to be Bob)")
         print(f"  Connecting to real Bob on port {self.bob_port}")
         
@@ -347,26 +351,29 @@ class Eve:
             self.bob_sock.connect(('localhost', self.bob_port))
             print("  Connected to Bob")
         except ConnectionRefusedError:
-            print("ERROR: Cannot connect to Bob!")
+            print("Cannot connect to Bob")
             sys.exit(1)
         
         # Wait for Alice
         print("  Waiting for Alice...")
         self.alice_conn, addr = self.server_sock.accept()
-        print("  Alice connected! MITM active.")
+        print("  Alice connected, MITM active.")
         
         # Intercept parameters
         print("\nIntercepting parameters...")
-        data = self.alice_conn.recv(8192).decode().strip()
+        data = recv_msg(self.alice_conn)
+        if not data:
+            print("ERROR: No parameters from Alice")
+            sys.exit(1)
         params = json.loads(data)
         self.p = int(params['p'])
         self.g = int(params['g'])
         self.bits = int(params['bits'])
         print(f"Parameters: {self.bits}-bit")
-        self.bob_sock.send(data.encode())
+        self.bob_sock.send((data + '\n').encode())
         
         # Generate Eve's two key pairs
-        print("\n--- Eve Generates TWO Key Pairs ---")
+        print("\n Eve Generates TWO Key Pairs")
         print("\nFor Alice-Eve channel:")
         self.private_key_alice = generate_private_key(self.p)
         print(f"  Eve's private key (e1): {self.private_key_alice}")
@@ -382,7 +389,10 @@ class Eve:
         # Intercept key exchange
         print("\nIntercepting keys...")
         # Get Alice's real key
-        data = self.alice_conn.recv(4096).decode().strip()
+        data = recv_msg(self.alice_conn)
+        if not data:
+            print("ERROR: No key from Alice")
+            sys.exit(1)
         self.alice_public_key = int(json.loads(data)['public_key'])
         
         # Send Eve's key to Bob (pretending to be Alice)
@@ -390,19 +400,22 @@ class Eve:
         self.bob_sock.send(fake_alice.encode())
         
         # Get Bob's real key
-        data = self.bob_sock.recv(4096).decode().strip()
+        data = recv_msg(self.bob_sock)
+        if not data:
+            print("ERROR: No key from Bob")
+            sys.exit(1)
         self.bob_public_key = int(json.loads(data)['public_key'])
         
         # Send Eve's key to Alice (pretending to be Bob)
         fake_bob = json.dumps({'public_key': str(self.public_key_alice)}) + '\n'
         self.alice_conn.send(fake_bob.encode())
-        print("\n--- Key Replacement Attack ---")
+        print("\n Key Replacement Attack")
         print(f"  Alice thinks Bob's key is: {self.public_key_alice}")
         print(f"  Bob thinks Alice's key is: {self.public_key_bob}")
         print(f"  (Both are actually Eve's keys!)")
         
         # Compute both secrets
-        print("\n--- Computing TWO Different Shared Secrets ---")
+        print("\n Computing TWO Different Shared Secrets")
         print("\nWith Alice:")
         print(f"  s1 = A^e1 mod p = {self.alice_public_key}^{self.private_key_alice} mod {self.p}")
         self.shared_secret_alice = compute_shared_secret(
@@ -420,10 +433,10 @@ class Eve:
         print(f"  s2 = {self.shared_secret_bob}")
         self.aes_key_bob = derive_key(self.shared_secret_bob)
         print(f"  AES key (Eve-Bob): {self.aes_key_bob.hex()}")
-        print(f"\n  ⚠️  MITM SUCCESS: Eve has TWO DIFFERENT secrets!")
+        print(f"\n  MITM SUCCESS: Eve has TWO DIFFERENT secrets!")
         
         # Intercept message
-        print("\n--- Intercepting Alice's Message ---")
+        print("\n Intercepting Alice's Message")
         data = recv_msg(self.alice_conn)
         msg_data = json.loads(data)
         encrypted_hex = msg_data['encrypted_message']
@@ -437,7 +450,7 @@ class Eve:
         print("\nOptions:")
         print("  1. Forward original")
         print("  2. Modify message")
-        choice = input("Choice (1-2): ").strip()
+        choice = input("Choose: ").strip()
         
         if choice == '2':
             modified = input("Modified message: ").strip()
@@ -455,7 +468,7 @@ class Eve:
         })
         
         # Forward to Bob
-        print(f"\n--- Re-encrypting for Bob ---")
+        print(f"\n Re-encrypting for Bob")
         print(f"Plaintext: '{self.modified_message}'")
         print(f"Encrypting with Eve-Bob key: {self.aes_key_bob.hex()}")
         new_encrypted = simple_encrypt(self.modified_message, self.aes_key_bob)
@@ -465,9 +478,8 @@ class Eve:
         print("Forwarded to Bob")
         
         # Continuous interception loop
-        print("\n" + "="*60)
+        print("\n")
         print("CONTINUOUS MITM INTERCEPTION (type 'quit' to stop)")
-        print("="*60)
         
         while True:
             # Intercept Bob's reply
@@ -564,9 +576,8 @@ class Eve:
                 break
         
         # Show analysis
-        print("\n" + "="*60)
+        print("\n")
         print("ATTACK ANALYSIS")
-        print("="*60)
         print("\nShared secrets (should be same, but aren't):")
         print(f"  Alice's: {hex(self.shared_secret_alice)[:50]}...")
         print(f"  Bob's:   {hex(self.shared_secret_bob)[:50]}...")
@@ -596,9 +607,8 @@ class Eve:
         
         # Brute force if weak
         if self.bits <= 23:
-            print("\n" + "="*60)
+            print("\n")
             print("BRUTE FORCE ATTACK")
-            print("="*60)
             print(f"Attempting to crack {self.bits}-bit key...")
             start = time.time()
             found = brute_force_discrete_log(
@@ -611,12 +621,11 @@ class Eve:
             else:
                 print(f"Failed in {elapsed:.2f} seconds")
         
-        print("\n" + "="*60)
+        print("\n")
         print("Recommendations:")
-        print("  1. Use 2048-bit or larger parameters")
-        print("  2. Add authentication (certificates, signatures)")
-        print("  3. Use TLS/SSL protocols")
-        print("="*60)
+        print("Use larger parameters")
+        print("Add authentication")
+        print("Try using standard TLS/SSL")
         
         # Cleanup
         if self.alice_conn:
